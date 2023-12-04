@@ -4,11 +4,9 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract Vesting is Ownable {
     using SafeMath for uint256;
-    using SafeERC20 for IERC20;
 
     // Экземпляр токена
     IERC20 public token;
@@ -34,9 +32,9 @@ contract Vesting is Ownable {
 
     // Кастомные Ошибки
     error VestingPeriodsNotStarted();
-    error ThisHolderAlreadyExists();
     error NoTokensAvailableForRelease();
     error TokenTransferFailed();
+    error ClaimingHasStarted();
 
     uint256 public constant HUNDRED_PERCENT = 100;
 
@@ -71,9 +69,8 @@ contract Vesting is Ownable {
         address account,
         uint256 amount
     ) external onlyOwner {
-        if (vestedAmount[account] > 0) revert ThisHolderAlreadyExists();
+        if (block.timestamp >= claim1Timestamp) revert ClaimingHasStarted();
         vestedAmount[account] = amount;
-        token.safeTransferFrom(msg.sender, address(this), amount);
 
         emit RightsDistributed(account, amount);
     }
@@ -83,22 +80,19 @@ contract Vesting is Ownable {
         address _address
     ) public view returns (uint256) {
         if (block.timestamp < startTimestamp) revert VestingPeriodsNotStarted();
+        uint256 availableAmount = 0;
         // Проходимся по всем периодам разморозки
         for (uint256 i = 0; i < vestingPeriods.length; i++) {
             // Если период разморозки начался
             if (block.timestamp >= vestingPeriods[i].startTime) {
                 // Вычисляем доступное количество токенов
-                uint256 availableAmount = vestedAmount[_address]
+                availableAmount = vestedAmount[_address]
                     .mul(vestingPeriods[i].percentage)
                     .div(HUNDRED_PERCENT);
-
-                // Возвращаем доступное количество токенов
-                return availableAmount;
             }
         }
-
-        // Если токены еще не разморозились, возвращаем 0
-        return 0;
+        // Возвращаем доступное количество токенов,  если токены еще не разморозились, возвращаем 0
+        return availableAmount;
     }
 
     // Функция для перевода доступного для разморозки количества токенов на адрес юзера
