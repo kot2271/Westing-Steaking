@@ -8,10 +8,10 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 contract Vesting is Ownable {
     using SafeMath for uint256;
 
-    // Экземпляр токена
+    // Token instance
     IERC20 public token;
 
-    // Параметры контракта
+    // Contract parameters
     uint256 public startTimestamp;
     uint256 public claim1Timestamp;
     uint256 public claim2Timestamp;
@@ -20,17 +20,17 @@ contract Vesting is Ownable {
     mapping(address => uint256) public vestedAmount;
     mapping(address => uint256) public claimedAmount;
 
-    // Правила разморозки токенов
+    // Token unfreezing rules
     struct VestingPeriod {
         uint256 startTime;
         uint256 percentage;
     }
 
-    // События
+    // Events
     event RightsDistributed(address indexed account, uint256 amount);
     event TokensWithdrawn(address indexed account, uint256 amount);
 
-    // Кастомные Ошибки
+    // Custom Errors
     error VestingPeriodsNotStarted();
     error NoTokensAvailableForRelease();
     error TokenTransferFailed();
@@ -40,7 +40,7 @@ contract Vesting is Ownable {
 
     VestingPeriod[] public vestingPeriods;
 
-    // Инициализация параметров
+    // Initializing parameters
     constructor(address _token) {
         token = IERC20(_token);
         startTimestamp = block.timestamp;
@@ -49,7 +49,7 @@ contract Vesting is Ownable {
         claim3Timestamp = startTimestamp + 90 days; // 90 days from the start
         endClaimTimestamp = startTimestamp + 120 days; // 120 days from the start
 
-        // Инициализация периодов разморозки
+        // Initializing defrost periods
         vestingPeriods.push(
             VestingPeriod({startTime: claim1Timestamp, percentage: 10})
         );
@@ -64,7 +64,11 @@ contract Vesting is Ownable {
         );
     }
 
-    // Функция для распределения прав на получение токенов
+    /**
+     * Function for distribution of rights to receive tokens.
+     * @param account account address
+     * @param amount amount of rights
+     */
     function distributeRights(
         address account,
         uint256 amount
@@ -75,50 +79,55 @@ contract Vesting is Ownable {
         emit RightsDistributed(account, amount);
     }
 
-    // Вью функция для подсчета доступного для разморозки количества токенов юзера
+    /**
+     * View function for calculating the number of user tokens available for unfreezing.
+     * @param _address user address
+     */
     function getAvailableAmount(
         address _address
     ) public view returns (uint256) {
         if (block.timestamp < startTimestamp) revert VestingPeriodsNotStarted();
         uint256 availableAmount = 0;
-        // Проходимся по всем периодам разморозки
+        // Going through all the defrosting periods
         for (uint256 i = 0; i < vestingPeriods.length; i++) {
-            // Если период разморозки начался
+            // If the defrosting period has started
             if (block.timestamp >= vestingPeriods[i].startTime) {
-                // Вычисляем доступное количество токенов
+                // Calculate the available number of tokens
                 availableAmount = vestedAmount[_address]
                     .mul(vestingPeriods[i].percentage)
                     .div(HUNDRED_PERCENT);
             }
         }
-        // Возвращаем доступное количество токенов,  если токены еще не разморозились, возвращаем 0
+        // Return the available number of tokens, if the tokens have not been unfrozen yet, return 0
         return availableAmount;
     }
 
-    // Функция для перевода доступного для разморозки количества токенов на адрес юзера
+    /**
+     * Function for transferring the number of tokens available for unfreezing to the user's address
+     */
     function withdrawTokens() external {
         uint256 availableAmount = getAvailableAmount(msg.sender);
 
-        if (availableAmount < claimedAmount[msg.sender])
+        if (availableAmount <= claimedAmount[msg.sender])
             revert NoTokensAvailableForRelease();
 
-        // Если доступное количество токенов больше 0
+        // If the available number of tokens is greater than 0
         if (availableAmount > 0) {
             uint256 amountToRelease = availableAmount -
                 claimedAmount[msg.sender];
 
-            // Подготавливаем данные для вызова функции transfer контракта токена
+            // Prepare data for calling the token contract transfer function
             bytes memory data = abi.encodeWithSignature(
                 "transfer(address,uint256)",
                 msg.sender,
                 amountToRelease
             );
 
-            // Вызываем функцию transfer контракта токена
+            // Call function transfer token contract
             (bool success, ) = address(token).call(data);
             if (!success) revert TokenTransferFailed();
 
-            // Обновляем количество уже размороженных токенов
+            // Updating the number of tokens already unfrozen
             claimedAmount[msg.sender] += amountToRelease;
 
             emit TokensWithdrawn(msg.sender, amountToRelease);

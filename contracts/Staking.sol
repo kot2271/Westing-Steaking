@@ -14,38 +14,46 @@ contract Staking {
         CLAIMED
     }
 
-    // Структура информации о депозите пользователя
+    /**
+     * @notice Structure of information on user's deposit
+     */
     struct StakeInfo {
-        uint256 amount; // Количество токенов
-        uint256 depositedTime; // Время депозита
-        uint256 claimedRewards; // Полученные награды
-        RewardStatus status; // Статус награды
+        uint256 amount; // Number of tokens
+        uint256 depositedTime; // Depositing time
+        uint256 claimedRewards; // Rewards received
+        RewardStatus status; // Status of the reward
     }
 
-    // Токены для депозитов и наград
+    /**
+     * @notice Tokens for deposits and rewards
+     */
     IERC20 public depositToken;
     IERC20 public rewardToken;
 
-    // Время лока (заморозки) депозитов
+    /**
+     * @notice Time of deposit lock-up (freezing)
+     */
     uint256 public lockPeriod;
 
-    // Процент вознаграждения
+    /**
+     * @notice Fee percentage
+     */
     uint256 public rewardRate;
 
-    // Хранение информации о депозитах пользователей
+    /**
+     * @notice Storing information on user deposits
+     */
     mapping(address => StakeInfo) public stakes;
 
-    // События
+    // Events
     event Deposit(address indexed user, uint256 amount);
     event Claim(address indexed user, uint256 amount);
     event Withdraw(address indexed user, uint256 amount);
 
-    // Кастомные Ошибки
+    // Custom Errors
     error DepositAmountMustBeGreaterThanZero();
     error LockPeriodNotEnded();
     error RewardsHasBeenReceived();
-    error RewardsHasBeenClaimed();
-    error NotAllRewardsAreReceived();
     error ClaimRewardsFirst();
 
     constructor(
@@ -60,7 +68,10 @@ contract Staking {
         rewardRate = _rewardRate;
     }
 
-    // Функция перевода токенов с адреса юзера на адрес контракта
+    /**
+     * Function for transferring tokens from user address to contract address.
+     * @param amount Amount of tokens
+     */
     function deposit(uint256 amount) external {
         if (amount <= 0) revert DepositAmountMustBeGreaterThanZero();
         depositToken.safeTransferFrom(msg.sender, address(this), amount);
@@ -72,40 +83,50 @@ contract Staking {
         emit Deposit(msg.sender, amount);
     }
 
-    // Функция для получения награды
+    /**
+     * Function for calculating the reward.
+     * @param stake Information on user's deposit
+     */
+    function calculateRewards(
+        StakeInfo memory stake
+    ) public view returns (uint256) {
+        return stake.amount.mul(rewardRate).div(100);
+    }
+
+    /**
+     * Function to receive an reward.
+     */
     function claimRewards() external {
         StakeInfo memory stake = stakes[msg.sender];
         if (block.timestamp < stake.depositedTime + lockPeriod)
             revert LockPeriodNotEnded();
         if (stake.claimedRewards > 0) revert RewardsHasBeenReceived();
-        if (stake.status == RewardStatus.CLAIMED)
-            revert RewardsHasBeenClaimed();
 
-        uint256 rewards = stake.amount.mul(rewardRate).div(100);
+        uint256 rewards = calculateRewards(stake);
 
-        // Получаем награды
+        // Getting awards
         rewardToken.safeTransfer(msg.sender, rewards);
 
-        // Обновляем информацию о полученных вознаграждениях
-        stake.claimedRewards = rewards;
-        stake.status = RewardStatus.CLAIMED;
+        // Updating information on remuneration received
+        stakes[msg.sender].claimedRewards = rewards;
+        stakes[msg.sender].status = RewardStatus.CLAIMED;
 
         emit Claim(msg.sender, rewards);
     }
 
-    // Функция выводящая задепозиченные юзером токены на его адрес
+    /**
+     * Function outputting tokens deposited by user to his address
+     */
     function withdraw() external {
         StakeInfo memory stake = stakes[msg.sender];
         if (stake.status == RewardStatus.UNCLAIMED) revert ClaimRewardsFirst();
-        if (stake.claimedRewards < stake.amount)
-            revert NotAllRewardsAreReceived();
 
-        // Получаем токены обратно
+        // Getting the tokens back
         depositToken.safeTransfer(msg.sender, stake.amount);
 
-        emit Withdraw(msg.sender, stake.amount);
+        emit Withdraw(msg.sender, stakes[msg.sender].amount);
 
-        // Удаляем информацию о депозите
+        // Deleting deposit information
         delete stakes[msg.sender];
     }
 }
